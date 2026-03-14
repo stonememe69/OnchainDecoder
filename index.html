@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+<title>OnChain TX Explorer</title>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<link rel="stylesheet"
+href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
+
+<style>
+
+*{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+--bg-primary:#ffffff;
+--bg-secondary:#f5f5f4;
+--border:rgba(0,0,0,.12);
+--text:#1a1a18;
+--muted:#6b6b67;
+--radius:10px;
+--wallet:#6ee7b7;
+--contract:#93c5fd;
+--arrow:#9ca3af;
+}
+
+@media (prefers-color-scheme:dark){
+:root{
+--bg-primary:#1c1c1a;
+--bg-secondary:#252523;
+--text:#f0ede8;
+--muted:#9a9890;
+--border:rgba(255,255,255,.1);
+}
+}
+
+body{
+font-family:system-ui;
+background:var(--bg-secondary);
+color:var(--text);
+padding:2rem 1rem;
+}
+
+#app{
+max-width:850px;
+margin:auto;
+}
+
+h1{font-size:22px;margin-bottom:6px}
+
+.subtitle{
+font-size:14px;
+color:var(--muted);
+margin-bottom:2rem;
+}
+
+.search-row{
+display:flex;
+gap:10px;
+margin-bottom:1rem;
+}
+
+.search-row input{
+flex:1;
+height:40px;
+padding:0 12px;
+border:1px solid var(--border);
+border-radius:var(--radius);
+font-family:monospace;
+}
+
+.search-row button{
+padding:0 18px;
+border:none;
+background:#4f46e5;
+color:white;
+border-radius:var(--radius);
+cursor:pointer;
+}
+
+.card{
+background:var(--bg-primary);
+border:1px solid var(--border);
+border-radius:12px;
+padding:1.4rem;
+margin-bottom:14px;
+}
+
+.section-label{
+font-size:11px;
+letter-spacing:.06em;
+color:var(--muted);
+margin-bottom:10px;
+text-transform:uppercase;
+}
+
+/* FLOW */
+
+.flow{
+display:flex;
+flex-direction:column;
+gap:18px;
+margin-top:10px;
+}
+
+.flow-row{
+display:flex;
+align-items:center;
+justify-content:center;
+gap:12px;
+flex-wrap:wrap;
+}
+
+.node{
+padding:10px 14px;
+border-radius:8px;
+font-size:13px;
+font-family:monospace;
+border:1px solid var(--border);
+background:var(--bg-secondary);
+}
+
+.wallet{
+background:rgba(16,185,129,.15);
+border-color:rgba(16,185,129,.5);
+}
+
+.contract{
+background:rgba(59,130,246,.15);
+border-color:rgba(59,130,246,.5);
+}
+
+.arrow{
+display:flex;
+align-items:center;
+gap:6px;
+font-size:13px;
+color:var(--arrow);
+}
+
+.arrow-line{
+width:40px;
+height:2px;
+background:var(--arrow);
+}
+
+.token{
+background:#111;
+color:#fff;
+font-size:11px;
+padding:3px 6px;
+border-radius:5px;
+margin-left:4px;
+}
+
+.spinner{
+width:22px;
+height:22px;
+border:3px solid var(--border);
+border-top-color:var(--text);
+border-radius:50%;
+animation:spin .8s linear infinite;
+margin:auto;
+}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.md-body{line-height:1.6}
+
+</style>
+</head>
+
+<body>
+
+<div id="app">
+
+<h1>OnChain TX Explorer</h1>
+<p class="subtitle">Paste a transaction hash to decode the transaction.</p>
+
+<div class="search-row">
+<input id="txInput" placeholder="0x..."/>
+<button onclick="analyze()">Analyze</button>
+</div>
+
+<div id="result"></div>
+
+</div>
+
+<script>
+
+marked.setOptions({gfm:true,breaks:true})
+
+function renderMarkdown(md){
+return marked.parse(md||"")
+}
+
+function short(addr){
+return addr.slice(0,6)+"..."+addr.slice(-4)
+}
+
+function isContract(addr){
+
+if(!addr) return false
+
+/* naive detection */
+
+if(addr.toLowerCase().includes("pool")) return true
+if(addr.toLowerCase().includes("router")) return true
+
+return addr.length>20
+}
+
+function node(addr){
+
+const type=isContract(addr)?"contract":"wallet"
+
+return `
+<div class="node ${type}">
+${short(addr)}
+</div>
+`
+}
+
+function arrow(amount,symbol){
+
+return `
+<div class="arrow">
+
+<span>${amount}</span>
+
+<span class="token">${symbol}</span>
+
+<div class="arrow-line"></div>
+
+➜
+
+</div>
+`
+}
+
+function renderFlow(transfers){
+
+if(!transfers||transfers.length===0)
+return "<p>No transfers found</p>"
+
+let html=`<div class="flow">`
+
+transfers.forEach(t=>{
+
+html+=`
+<div class="flow-row">
+
+${node(t.from)}
+
+${arrow(t.amount,t.symbol)}
+
+${node(t.to)}
+
+</div>
+`
+})
+
+html+="</div>"
+
+return html
+}
+
+function renderLoading(){
+
+return `
+<div class="card">
+<div class="spinner"></div>
+<p style="text-align:center;margin-top:10px">
+Decoding transaction...
+</p>
+</div>
+`
+}
+
+function renderResult(data){
+
+return `
+
+<div class="card">
+
+<div class="section-label">Explanation</div>
+
+<div class="md-body">
+${renderMarkdown(data.human_explanation)}
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="section-label">Transaction Flow</div>
+
+${renderFlow(data.transfers)}
+
+</div>
+
+`
+}
+
+async function analyze(){
+
+const hash=document.getElementById("txInput").value.trim()
+
+const out=document.getElementById("result")
+
+if(!hash){
+
+out.innerHTML="<div class='card'>Enter a transaction hash</div>"
+return
+}
+
+out.innerHTML=renderLoading()
+
+try{
+
+const res=await fetch(`/tx/${encodeURIComponent(hash)}`)
+
+const data=await res.json()
+
+out.innerHTML=renderResult(data)
+
+document.querySelectorAll("pre code").forEach(el=>{
+hljs.highlightElement(el)
+})
+
+}catch(e){
+
+out.innerHTML="<div class='card'>API connection error</div>"
+
+}
+
+}
+
+document.getElementById("txInput")
+.addEventListener("keydown",e=>{
+if(e.key==="Enter") analyze()
+})
+
+</script>
+
+</body>
+</html>
